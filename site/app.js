@@ -44,7 +44,23 @@
   function artworkVariant(value) {
     try { const url=new URL(value,location.href); return url.origin===location.origin ? responsiveArtwork[url.pathname] : null; } catch { return null; }
   }
+  const pendingArtwork = new WeakMap();
+  const artworkObserver = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => {
+    for (const {target, isIntersecting} of entries) {
+      const artwork = pendingArtwork.get(target);
+      if (!isIntersecting || !artwork) continue;
+      artworkObserver.unobserve(target);
+      pendingArtwork.delete(target);
+      target.removeAttribute('data-nearby-artwork');
+      setArtwork(target, artwork.value, artwork.slot);
+    }
+  }, {rootMargin:'240px 0px'}) : null;
   function setArtwork(element,value,slot) {
+    if (artworkObserver && element.hasAttribute('data-nearby-artwork')) {
+      pendingArtwork.set(element, {value, slot});
+      artworkObserver.observe(element);
+      return;
+    }
     const variant=artworkVariant(value);
     if(variant) {
       element.sizes=slot==='player'?'56px':slot==='small'?'48px':slot==='phone'?'240px':'(max-width: 760px) calc((100vw - 56px) / 2), (max-width: 900px) calc((100vw - 68px) / 2), 25vw';
