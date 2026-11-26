@@ -16,21 +16,84 @@
     ...(/^[a-f0-9]{12}$/.test(revision || '') ? {site_revision: revision} : {}),
   };
   const noAds = {ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'};
-  const views = new Set(['Home', 'Search', 'Library', 'Privacy', 'Terms', 'Install', 'About']);
+  const dialogs = new Map([
+    ['Search', 'search'], ['Library', 'saved'], ['Privacy', 'privacy'],
+    ['Terms', 'terms'], ['Install', 'install_help'], ['About', 'about_dialog'], ['Menu', 'menu'],
+  ]);
   const stationIds = new Set(['house', 'techno', 'trance', 'dnb']);
-  const sections = new Set(['radio', 'discover', 'app', 'about']);
+  const anchors = new Set(['radio', 'discover', 'app', 'about']);
+  const regions = new Map([
+    ['header', '.site-header'], ['radio', '#radio'], ['discover', '#discover'],
+    ['app', '#app'], ['about', '#about'], ['footer', '.site-footer'], ['player', '#player'],
+  ]);
+  const sections = new Set([...regions.keys(), ...dialogs.values()]);
   const sources = new Set(['hero', 'artwork', 'player', 'app_demo', 'station_card', 'search', 'saved', 'keyboard', 'media_controls', 'autoplay', 'app_section', 'header', 'mobile_menu', 'footer', 'about']);
+  // Each row defines a stable reporting label. Only these controls can emit events.
+  // Station attribution is restricted to the public station slug allowlist.
+  const controls = [
+    ['.site-header .brand', 'header', 'home_link'],
+    ['.desktop-nav a[href="#radio"]', 'header', 'radio_link'],
+    ['.desktop-nav a[href="#discover"]', 'header', 'discover_link'],
+    ['.desktop-nav a[href="#app"]', 'header', 'app_link'],
+    ['.site-header [data-open="saved-dialog"]', 'header', 'open_saved'],
+    ['.site-header [data-open="search-dialog"]', 'header', 'open_search'],
+    ['.site-header .header-listen', 'header', 'find_sound', true],
+    ['.site-header [data-open="menu-dialog"]', 'header', 'open_menu'],
+    ['#hero-play', 'radio', 'hero_play', true],
+    ['#art-play', 'radio', 'hero_art_play', true],
+    ['#radio a[href="#discover"]', 'radio', 'explore_sounds', true],
+    ['#discover [data-filter]', 'discover', 'genre_filter'],
+    ['#discover [data-play]', 'discover', 'station_play', true],
+    ['#discover [data-save]', 'discover', 'station_save'],
+    ['#install-button', 'app', 'android_download', true],
+    ['#install-web-button', 'app', 'web_install', true],
+    ['#app a[href="./release-notes.txt"]', 'app', 'release_notes'],
+    ['#phone-play', 'app', 'app_demo_play', true],
+    ['#about a[href="#discover"]', 'about', 'about_discover', true],
+    ['.site-footer .brand', 'footer', 'home_link'],
+    ['.site-footer [data-open="privacy-dialog"]', 'footer', 'privacy_link'],
+    ['#share-button', 'footer', 'share'],
+    ['#player-save', 'player', 'player_save'],
+    ['#previous-button', 'player', 'previous_station'],
+    ['#player-play', 'player', 'player_play', true],
+    ['#next-button', 'player', 'next_station'],
+    ['#mute-button', 'player', 'mute'],
+    ['#search-results button[data-result-station]', 'search', 'result_play'],
+    ['#search-results [data-save]', 'search', 'result_save'],
+    ['#saved-results button[data-result-station]', 'saved', 'saved_play'],
+    ['#saved-results [data-save]', 'saved', 'saved_toggle'],
+    ['#menu-dialog a[href="#radio"]', 'menu', 'radio_link'],
+    ['#menu-dialog a[href="#discover"]', 'menu', 'discover_link'],
+    ['#menu-dialog a[href="#app"]', 'menu', 'app_link'],
+    ['#menu-dialog a[href="#about"]', 'menu', 'about_link'],
+    ['#menu-dialog [data-open="saved-dialog"]', 'menu', 'open_saved'],
+    ['#privacy-dialog a[href$="/app/transfer-settings"]', 'privacy', 'import_preferences'],
+    ['#privacy-dialog a[href="https://policies.google.com/privacy"]', 'privacy', 'provider_privacy'],
+  ];
+  const controlNames = new Set([...controls.map(([, , label]) => label), 'volume', 'close_dialog']);
+  const outcomes = new Set([
+    'no_results', 'one_result', 'multiple_results', 'accepted', 'dismissed', 'manual_instructions',
+    'prompt_error', 'browser_blocked', 'source_unavailable', 'retry_exhausted', 'muted', 'unmuted',
+  ]);
   const events = new Set([
     'page_view', 'section_view', 'navigate_section', 'playback_requested', 'playback_started',
     'playback_paused', 'playback_error', 'playback_retry', 'playback_buffering',
     'select_station', 'filter_stations', 'save_station', 'remove_saved_station', 'open_search',
     'open_library', 'download_app', 'web_app_install_opened', 'web_app_installed', 'share_site', 'page_departure',
+    'control_impression', 'control_click', 'control_engaged', 'control_change', 'search_results',
+    'playback_blocked', 'web_app_install_result',
   ]);
   let enabled = false, loaded = false, pageSent = false, away = false;
   let foreground = document.visibilityState === 'visible';
   let screen = 'Home', playback = 'paused', station = null, mode = 'preview', audible = false;
-  let since = performance.now(), observer;
+  let launchSource = null, launchSection = null;
+  let since = performance.now(), exposureAt = since, observer;
+  const controlObservers = [];
+  const visibleSections = new Set();
   const seenSections = new Set();
+  const seenControls = new Set();
+  const engagedControls = new Set();
+  const exposureTotals = new Map();
 
   function tag() { (window.dataLayer = window.dataLayer || []).push(arguments); }
   function event(name, selected, details = {}) {
@@ -39,10 +102,30 @@
     if (stationIds.has(selected)) params.station = selected;
     if (sections.has(details.section)) params.site_section = details.section;
     if (sources.has(details.source)) params.interaction_source = details.source;
+    if (controlNames.has(details.control)) params.site_control = details.control;
+    if (outcomes.has(details.outcome)) params.outcome = details.outcome;
     if (details.mode === 'preview' || details.mode === 'live') params.playback_mode = details.mode;
     tag('event', name, params);
   }
   function resetTiming() { since = performance.now(); }
+  function accrueExposure() {
+    const now = performance.now();
+    const elapsed = Math.min(120000, Math.max(0, Math.round(now - exposureAt)));
+    exposureAt = now;
+    if (!elapsed || !enabled || !foreground || away) return;
+    const dialog = dialogs.get(screen);
+    for (const section of dialog ? [dialog] : visibleSections) {
+      exposureTotals.set(section, (exposureTotals.get(section) || 0) + elapsed);
+    }
+  }
+  function flushExposure() {
+    accrueExposure();
+    for (const [section, duration] of exposureTotals) {
+      if (duration < 250) continue;
+      tag('event', 'section_time', {...context, site_section: section, section_duration_ms: duration});
+    }
+    exposureTotals.clear();
+  }
   function flush() {
     const now = performance.now();
     // Bound a single sample so a suspended tab cannot create hours of listening time.
@@ -58,55 +141,138 @@
     if (listening || playback === 'buffering') {
       tag('event', listening ? 'playback_time' : 'buffering_time', {
         ...params, playback_mode: mode, ...(station ? {station} : {}),
+        ...(launchSource ? {interaction_source: launchSource} : {}),
+        ...(launchSection ? {site_section: launchSection} : {}),
         [listening ? 'playback_duration_ms' : 'buffering_duration_ms']: elapsed,
       });
     }
   }
   function view(value) {
-    if (!views.has(value) || value === screen) return;
+    if ((value !== 'Home' && !dialogs.has(value)) || value === screen) return;
+    accrueExposure();
     flush();
     screen = value;
+    const region = dialogs.get(value);
+    if (enabled && region && !seenSections.has(region)) {
+      seenSections.add(region);
+      event('section_view', null, {section: region});
+    }
+    watchSections();
   }
   function state(value, selected, details = {}) {
     if (!['playing', 'buffering', 'paused'].includes(value)) return;
     const nextStation = stationIds.has(selected) ? selected : null;
     const nextMode = details.mode === 'live' ? 'live' : 'preview';
     const nextAudible = details.audible === true;
-    if (playback === value && station === nextStation && mode === nextMode && audible === nextAudible) return;
+    const nextSource = sources.has(details.source) ? details.source : null;
+    const nextSection = sections.has(details.section) ? details.section : null;
+    if (playback === value && station === nextStation && mode === nextMode && audible === nextAudible &&
+        launchSource === nextSource && launchSection === nextSection) return;
     flush();
     playback = value;
     station = nextStation;
     mode = nextMode;
     audible = nextAudible;
+    launchSource = nextSource;
+    launchSection = nextSection;
   }
 
-  function watchSections() {
+  function stopWatching() {
     observer?.disconnect();
-    if (!enabled || !foreground || away || !('IntersectionObserver' in window)) return;
+    for (const controlObserver of controlObservers) controlObserver.disconnect();
+    controlObservers.length = 0;
+    visibleSections.clear();
+  }
+  function watchSections() {
+    stopWatching();
+    if (!enabled || !foreground || away || dialogs.has(screen) || !('IntersectionObserver' in window)) return;
+    const sectionByElement = new Map();
     observer = new IntersectionObserver(entries => {
       if (!enabled || !foreground || away) return;
+      accrueExposure();
       for (const entry of entries) {
-        const section = entry.target.id;
-        if (!entry.isIntersecting || entry.intersectionRatio < 0.05 || seenSections.has(section)) continue;
+        const section = sectionByElement.get(entry.target);
+        const visible = entry.isIntersecting && entry.intersectionRatio >= 0.1;
+        if (!visible) {
+          visibleSections.delete(section);
+          continue;
+        }
+        // The pinned player's usage is measured through its controls and playback.
+        if (section !== 'player') visibleSections.add(section);
+        if (seenSections.has(section)) continue;
         seenSections.add(section);
         event('section_view', null, {section});
-        observer.unobserve(entry.target);
       }
-    }, {threshold: 0.05, rootMargin: '0px 0px -15% 0px'});
-    for (const id of sections) {
-      const section = document.getElementById(id);
-      if (section && !seenSections.has(id)) observer.observe(section);
+    }, {threshold: 0.1});
+    for (const [section, selector] of regions) {
+      const element = document.querySelector(selector);
+      if (!element) continue;
+      sectionByElement.set(element, section);
+      observer.observe(element);
     }
+    function watchControls(pinned, rootMargin = '0px') {
+      const controlByElement = new Map();
+      const controlObserver = new IntersectionObserver(entries => {
+        if (!enabled || !foreground || away || dialogs.has(screen)) return;
+        for (const entry of entries) {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.5) continue;
+          const [section, control] = controlByElement.get(entry.target);
+          const station = stationFor(entry.target);
+          const key = controlKey(section, control, station);
+          if (seenControls.has(key)) continue;
+          seenControls.add(key);
+          event('control_impression', station, {section, control});
+          controlObserver.unobserve(entry.target);
+        }
+      }, {threshold: 0.5, rootMargin});
+      controlObservers.push(controlObserver);
+      for (const [selector, section, control, impression] of controls) {
+        if (!impression || (section === 'player') !== pinned) continue;
+        for (const element of document.querySelectorAll(selector)) {
+          if (seenControls.has(controlKey(section, control, stationFor(element)))) continue;
+          controlByElement.set(element, [section, control]);
+          controlObserver.observe(element);
+        }
+      }
+    }
+    const playerHeight = Math.round(document.getElementById('player')?.getBoundingClientRect().height || 0);
+    watchControls(false, `0px 0px -${playerHeight}px 0px`);
+    watchControls(true);
   }
+  function stationFor(element) {
+    const {play, save, filter, resultStation} = element.dataset;
+    const value = play || save || filter || resultStation;
+    return stationIds.has(value) ? value : null;
+  }
+  function controlKey(section, control, station) {
+    return [section, control, station].join('/');
+  }
+  // Capture runs before click handlers close dialogs or remove result buttons.
   document.addEventListener('click', click => {
     if (!enabled) return;
+    for (const [selector, section, control] of controls) {
+      const element = click.target.closest?.(selector);
+      if (!element) continue;
+      const station = stationFor(element);
+      event('control_click', station, {section, control});
+      const key = controlKey(section, control, station);
+      if (seenControls.has(key) && !engagedControls.has(key)) {
+        engagedControls.add(key);
+        event('control_engaged', station, {section, control});
+      }
+      break;
+    }
+    const dialog = dialogs.get(screen);
+    if (dialog && click.target.closest?.('dialog [data-close]')) {
+      event('control_click', null, {section: dialog, control: 'close_dialog'});
+    }
     const link = click.target.closest?.('a[href^="#"]');
     const section = link?.getAttribute('href').slice(1);
-    if (!sections.has(section)) return;
+    if (!anchors.has(section)) return;
     const source = link.closest('.mobile-nav-dialog') ? 'mobile_menu' : link.closest('.site-header') ? 'header'
       : link.closest('.site-footer') ? 'footer' : link.closest('#about') ? 'about' : 'hero';
     event('navigate_section', null, {section, source});
-  });
+  }, true);
 
   function choice() {
     try {
@@ -169,11 +335,13 @@
   }
   function consent(value, persist = true) {
     resetTiming();
+    exposureAt = since;
+    exposureTotals.clear();
     const permitted = value === true && !optOut;
     enabled = persist ? remember(permitted) && permitted : permitted;
     if (enabled) start();
     else {
-      observer?.disconnect();
+      stopWatching();
       window['ga-disable-' + id] = true;
       if (loaded) tag('consent', 'update', {analytics_storage: 'denied', ...noAds});
       removeCookies();
@@ -192,23 +360,26 @@
   });
   document.addEventListener('visibilitychange', () => {
     flush();
+    flushExposure();
     foreground = document.visibilityState === 'visible';
     watchSections();
   });
   window.addEventListener('pagehide', () => {
     if (away) return;
     flush();
+    flushExposure();
     event('page_departure');
     away = true;
-    observer?.disconnect();
+    stopWatching();
   });
   window.addEventListener('pageshow', () => {
     if (!away) return;
     away = false;
     foreground = document.visibilityState === 'visible';
     resetTiming();
+    exposureAt = since;
     watchSections();
   });
-  setInterval(flush, 60000);
+  setInterval(() => { flush(); flushExposure(); }, 60000);
   consent(choice() === true, false);
 })();

@@ -5,7 +5,9 @@
   const live = config.liveMode === true;
   const usage = (event, station, details) => { try { window.EDM_ANALYTICS?.event(event, station, details); } catch {} };
   const playbackMode = live ? 'live' : 'preview';
+  const playbackSections = {hero:'radio',artwork:'radio',app_demo:'app',station_card:'discover',search:'search',saved:'saved',player:'player',media_controls:'player',keyboard:'player',autoplay:'radio'};
   let playbackSource = 'player', reportedPlaybackStart = false;
+  const playbackContext = () => ({source:playbackSource, section:playbackSections[playbackSource], mode:playbackMode});
   const allStations = Array.isArray(config.stations) ? config.stations : [];
   const stations = allStations.filter(s => s && /^[a-z0-9-]+$/.test(s.id) && (!live || safeUrl(s.streamUrl)));
   const audio = $('radio-audio');
@@ -69,16 +71,17 @@
   function clearWaiting() {clearTimeout(retryTimer);clearTimeout(watchdogTimer);clearTimeout(stableTimer);retryTimer=null;watchdogTimer=null;stableTimer=null;}
   function reportPlaybackState() {
     const state = status === 'playing' ? 'playing' : ['buffering','connecting','reconnecting'].includes(status) ? 'buffering' : 'paused';
-    try { window.EDM_ANALYTICS?.state(state, current?.id, {mode:playbackMode, audible:!audio.muted && audio.volume>0}); } catch {}
+    try { window.EDM_ANALYTICS?.state(state, current?.id, {...playbackContext(), audible:!audio.muted && audio.volume>0}); } catch {}
   }
-  function updateState(next) {
+  function updateState(next, outcome) {
     const previous=status; status=next;
     reportPlaybackState();
-    const details = {source:playbackSource, mode:playbackMode};
+    const details = playbackContext();
     if(previous!==next&&next==='reconnecting')usage('playback_retry',current?.id,details);
     if(previous!==next&&next==='buffering')usage('playback_buffering',current?.id,details);
     if(previous!==next&&next==='paused'&&['playing','connecting','reconnecting','buffering'].includes(previous))usage('playback_paused',current?.id,details);
-    if(previous!==next&&next==='error')usage('playback_error',current?.id,details);
+    if(previous!==next&&next==='error')usage('playback_error',current?.id,{...details,outcome});
+    if(previous!==next&&next==='blocked')usage('playback_blocked',current?.id,{...details,outcome:'browser_blocked'});
     if(next==='playing'&&!reportedPlaybackStart){
       reportedPlaybackStart=true;
       usage('playback_started',current?.id,details);
@@ -129,9 +132,9 @@
       retryCount=0;
       playbackSource=autoplay?'autoplay':source;
       reportedPlaybackStart=false;
-      usage('playback_requested',current.id,{source:playbackSource,mode:playbackMode});
+      usage('playback_requested',current.id,playbackContext());
     }
-    if(!setSource(retrying)){wantsPlay=false;updateState('error');return Promise.resolve();}
+    if(!setSource(retrying)){wantsPlay=false;updateState('error','source_unavailable');return Promise.resolve();}
     updateState(retrying?'reconnecting':'connecting');
     setWatchdog();
     // This call is synchronous within the click handler, preserving mobile user activation.
@@ -167,7 +170,7 @@
     clearTimeout(watchdogTimer);clearTimeout(stableTimer);
     if(!navigator.onLine){updateState('offline');return;}
     if(retryCount>=retries.length) {
-      wantsPlay=false;++operation;audio.pause();clearWaiting();stopMetadata();updateState('error');return;
+      wantsPlay=false;++operation;audio.pause();clearWaiting();stopMetadata();updateState('error','retry_exhausted');return;
     }
     updateState('reconnecting');
     const delay=retries[retryCount++];
@@ -249,20 +252,31 @@
     if(!items.length){const empty=document.createElement('p');empty.className='empty-state';empty.textContent=emptyMessage;container.append(empty);return;}
     items.forEach(station=>{
       const row=document.createElement('div');row.className='result-row';
-      const play=document.createElement('button');play.type='button';play.setAttribute('aria-label','Play '+station.name);
+      const play=document.createElement('button');play.type='button';play.dataset.resultStation=station.id;play.setAttribute('aria-label','Play '+station.name);
       const art=document.createElement('img');setArtwork(art,safeUrl(station.artwork),'small');art.alt='';art.width=48;art.height=48;
       const copy=document.createElement('span');const title=document.createElement('strong');title.textContent=station.name;
       const subtitle=document.createElement('small');subtitle.textContent=live?'Live radio':station.title+' · '+station.bpm+' BPM · Preview';copy.append(title,subtitle);play.append(art,copy);
-      play.addEventListener('click',()=>{closeDialogs();chooseStation(station.id,{source:container.id==='search-results'?'search':'saved'});});
+      play.addEventListener('click',()=>{if(container.id==='search-results')reportSearch();closeDialogs();chooseStation(station.id,{source:container.id==='search-results'?'search':'saved'});});
       const heart=document.createElement('button');heart.type='button';heart.className='icon-button';heart.dataset.save=station.id;
       heart.innerHTML='<svg class="icon" aria-hidden="true"><use href="#i-heart"/></svg>';
       heart.addEventListener('click',()=>toggleSaved(station.id));row.append(play,heart);container.append(row);
     });updateSavedUI();
   }
   function renderSaved(){renderResults($('saved-results'),stations.filter(s=>saved.has(s.id)),'Your next favorite is out there. Tap the heart on any frequency to keep it here.');}
-  function renderSearch(){const term=$('search-input').value.trim().toLowerCase();renderResults($('search-results'),stations.filter(s=>[s.name,s.title,s.description,s.keywords].join(' ').toLowerCase().includes(term)),'No frequencies match yet. Try house, techno, trance, or liquid.');}
+  let searchTimer, pendingSearchOutcome;
+  function renderSearch(){
+    const term=$('search-input').value.trim().toLowerCase();
+    const results=stations.filter(s=>[s.name,s.title,s.description,s.keywords].join(' ').toLowerCase().includes(term));
+    renderResults($('search-results'),results,'No frequencies match yet. Try house, techno, trance, or liquid.');
+    return term ? results.length : null;
+  }
+  function reportSearch(){
+    clearTimeout(searchTimer);
+    if(pendingSearchOutcome)usage('search_results',null,{section:'search',source:'search',outcome:pendingSearchOutcome});
+    pendingSearchOutcome=null;
+  }
   function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());try { window.EDM_ANALYTICS?.view('Home'); } catch {}}
-  function openDialog(id){closeDialogs();if(id==='search-dialog')usage('open_search');if(id==='saved-dialog')usage('open_library');if(id==='saved-dialog')renderSaved();if(id==='search-dialog')renderSearch();const dialog=$(id);dialog?.showModal();try { window.EDM_ANALYTICS?.view({'search-dialog':'Search','saved-dialog':'Library','privacy-dialog':'Privacy','terms-dialog':'Terms','install-dialog':'Install','about-dialog':'About'}[id] || 'Home'); } catch {} if(id==='search-dialog')$('search-input').focus();}
+  function openDialog(id){closeDialogs();if(id==='search-dialog')usage('open_search');if(id==='saved-dialog')usage('open_library');if(id==='saved-dialog')renderSaved();if(id==='search-dialog')renderSearch();const dialog=$(id);dialog?.showModal();try { window.EDM_ANALYTICS?.view({'search-dialog':'Search','saved-dialog':'Library','privacy-dialog':'Privacy','terms-dialog':'Terms','install-dialog':'Install','about-dialog':'About','menu-dialog':'Menu'}[id] || 'Home'); } catch {} if(id==='search-dialog')$('search-input').focus();}
 
   const playButtonSources = ['hero','artwork','player','app_demo'];
   playButtons.forEach((button,index)=>button.addEventListener('click',()=>togglePlayback(playButtonSources[index])));
@@ -274,7 +288,15 @@
   document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>closeDialogs()));
   document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('close',()=>{if(!document.querySelector('dialog[open]'))try { window.EDM_ANALYTICS?.view('Home'); } catch {}}));
   document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}}));
-  $('search-input').addEventListener('input',renderSearch);
+  $('search-input').addEventListener('input',()=>{
+    const count=renderSearch();
+    clearTimeout(searchTimer);
+    pendingSearchOutcome=null;
+    if(count===null || !window.EDM_ANALYTICS?.isEnabled())return;
+    pendingSearchOutcome=count===0?'no_results':count===1?'one_result':'multiple_results';
+    searchTimer=setTimeout(reportSearch,600);
+  });
+  $('search-dialog').addEventListener('close',reportSearch);
   document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{
     const selected=button.dataset.filter;
     usage('filter_stations',selected,{section:'discover',source:'station_card'});
@@ -282,7 +304,12 @@
     document.querySelectorAll('[data-channel]').forEach(card=>{card.hidden=!stations.some(s=>s.id===card.dataset.channel)||(selected!=='all'&&card.dataset.channel!==selected);});
   }));
   $('volume').addEventListener('input',event=>{audio.volume=Number(event.target.value);audio.muted=false;storage.set(keys.volume,audio.volume);updateVolume();});
-  $('mute-button').addEventListener('click',()=>{audio.muted=!audio.muted;updateVolume();});
+  $('volume').addEventListener('change',()=>usage('control_change',null,{section:'player',control:'volume'}));
+  $('mute-button').addEventListener('click',()=>{
+    audio.muted=!audio.muted;
+    updateVolume();
+    usage('control_change',null,{section:'player',control:'mute',outcome:audio.muted||audio.volume===0?'muted':'unmuted'});
+  });
   audio.addEventListener('volumechange',reportPlaybackState);
   function updateVolume(){const muted=audio.muted||audio.volume===0;icon($('mute-button'),muted?'mute':'volume');$('mute-button').setAttribute('aria-label',muted?'Unmute audio':'Mute audio');reportPlaybackState();}
   $('clear-data').addEventListener('click',()=>{
@@ -296,18 +323,34 @@
   $('install-button').addEventListener('click',async()=>{
     const apk=androidDownload();
     if(apk){
-      usage('download_app',null,{section:'app',source:'app_section'});
+      usage('download_app',null,{section:'app',source:'app_section',control:'android_download'});
       const link=document.createElement('a');
       link.href=apk.href;link.download=apk.filename;link.referrerPolicy='no-referrer';link.hidden=true;
       document.body.append(link);link.click();link.remove();
       announce('Download requested. Check your browser’s downloads for the Uplink APK.');return;
     }
     if(config.androidAppUrl){announce('The app download is unavailable. Please try again later.');return;}
-    usage('web_app_install_opened',null,{section:'app',source:'app_section'});
-    if(installPrompt){const prompt=installPrompt;installPrompt=null;try{await prompt.prompt();const result=await prompt.userChoice;if(result.outcome==='accepted')announce('Your frequency is coming to your home screen.');}catch{openDialog('install-dialog');}}
-    else openDialog('install-dialog');
+    usage('web_app_install_opened',null,{section:'app',source:'app_section',control:'web_install'});
+    const installResult=outcome=>usage('web_app_install_result',null,{section:'app',source:'app_section',control:'web_install',outcome});
+    if(installPrompt){
+      const prompt=installPrompt;
+      installPrompt=null;
+      try{
+        await prompt.prompt();
+        const result=await prompt.userChoice;
+        const accepted=result.outcome==='accepted';
+        installResult(accepted?'accepted':'dismissed');
+        if(accepted)announce('Your frequency is coming to your home screen.');
+      }catch{
+        installResult('prompt_error');
+        openDialog('install-dialog');
+      }
+    }else{
+      installResult('manual_instructions');
+      openDialog('install-dialog');
+    }
   });
-  window.addEventListener('appinstalled',()=>{installPrompt=null;usage('web_app_installed');announce('Your frequency is on your home screen.');});
+  window.addEventListener('appinstalled',()=>{installPrompt=null;usage('web_app_installed',null,{section:'app',control:'web_install'});announce('Your frequency is on your home screen.');});
 
   audio.addEventListener('playing',()=>{
     if(!wantsPlay){audio.pause();return;}
