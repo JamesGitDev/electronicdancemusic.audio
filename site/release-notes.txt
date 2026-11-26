@@ -1,0 +1,20 @@
+Uplink Listener beta 0.3.16-rc8 (build 40)
+November 8, 2026
+
+Install as an update to your existing Uplink app; do not uninstall or clear data.
+The existing design, sign-in, artwork, library and preferences are preserved.
+
+This beta improves personal-radio Next and Up Next selections by reusing the
+exact authorized prepared recording. It adds bounded next-track preparation
+on ordinary cellular data, respects Android Data Saver, and primes matching
+artwork independently of audio. Playback remains owned by one native service.
+
+The compatible Uplink server update is already installed. The APK uses the
+existing publisher signature and approved HTTPS listener gateway.
+
+Matching debug builds were tested on a Pixel 10 Pro XL and Android emulator,
+including real cellular playback and a 30-minute background test. The signed
+release APK was built and verified; this is still a beta for tester feedback.
+Live startup varies with network conditions, and zero-gap playback is not
+guaranteed. A complete automatic-transition before/after comparison remains
+unfinished. Phone-transfer restoration remains disabled pending validation.

@@ -1,0 +1,15 @@
+{
+  "name": "electronicdancemusic-audio-site",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check site/app.js && node --check site/analytics.js && node --check site/sw.js && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

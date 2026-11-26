@@ -1,0 +1,24 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.uplink.listener",
+      "sha256_cert_fingerprints": [
+        "E5:19:7D:F4:75:93:D0:6E:14:8B:AE:1E:38:A5:91:2F:AA:EC:2C:52:C4:5B:DF:56:DF:29:F5:DD:3F:9B:C6:6B"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "web",
+      "site": "https://electronicdancemusic.audio"
+    }
+  }
+]
