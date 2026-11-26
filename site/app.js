@@ -3,7 +3,9 @@
   const $ = (id) => document.getElementById(id);
   const config = window.EDM_CONFIG || {stations:[],liveMode:false};
   const live = config.liveMode === true;
-  const usage = (event, station) => { try { window.EDM_ANALYTICS?.event(event, station); } catch {} };
+  const usage = (event, station, details) => { try { window.EDM_ANALYTICS?.event(event, station, details); } catch {} };
+  const playbackMode = live ? 'live' : 'preview';
+  let playbackSource = 'player', reportedPlaybackStart = false;
   const allStations = Array.isArray(config.stations) ? config.stations : [];
   const stations = allStations.filter(s => s && /^[a-z0-9-]+$/.test(s.id) && (!live || safeUrl(s.streamUrl)));
   const audio = $('radio-audio');
@@ -65,12 +67,22 @@
     toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),3200);
   }
   function clearWaiting() {clearTimeout(retryTimer);clearTimeout(watchdogTimer);clearTimeout(stableTimer);retryTimer=null;watchdogTimer=null;stableTimer=null;}
+  function reportPlaybackState() {
+    const state = status === 'playing' ? 'playing' : ['buffering','connecting','reconnecting'].includes(status) ? 'buffering' : 'paused';
+    try { window.EDM_ANALYTICS?.state(state, current?.id, {mode:playbackMode, audible:!audio.muted && audio.volume>0}); } catch {}
+  }
   function updateState(next) {
     const previous=status; status=next;
-    try { window.EDM_ANALYTICS?.state(next === 'playing' ? 'playing' : ['buffering','connecting','reconnecting'].includes(next) ? 'buffering' : 'paused', current?.id); } catch {}
-    if(previous!==next&&next==='reconnecting')usage('playback_retry',current?.id);
-    if(previous!==next&&next==='buffering')usage('playback_buffering',current?.id);
-    if(previous!==next&&['playing','paused','error'].includes(next)) usage({playing:'playback_started',paused:'playback_paused',error:'playback_error'}[next],current?.id);
+    reportPlaybackState();
+    const details = {source:playbackSource, mode:playbackMode};
+    if(previous!==next&&next==='reconnecting')usage('playback_retry',current?.id,details);
+    if(previous!==next&&next==='buffering')usage('playback_buffering',current?.id,details);
+    if(previous!==next&&next==='paused'&&['playing','connecting','reconnecting','buffering'].includes(previous))usage('playback_paused',current?.id,details);
+    if(previous!==next&&next==='error')usage('playback_error',current?.id,details);
+    if(next==='playing'&&!reportedPlaybackStart){
+      reportedPlaybackStart=true;
+      usage('playback_started',current?.id,details);
+    }
     const playing=next==='playing';
     const pending=next==='connecting'||next==='reconnecting'||next==='buffering';
     document.body.classList.toggle('is-playing',playing);
@@ -108,12 +120,17 @@
     }
     return true;
   }
-  function startPlayback({autoplay=false,retrying=false}={}) {
+  function startPlayback({autoplay=false,retrying=false,source='player'}={}) {
     if(!current){updateState('unavailable');return Promise.resolve();}
     clearWaiting();
     wantsPlay=true;
     const token=++operation;
-    if(!retrying) retryCount=0;
+    if(!retrying){
+      retryCount=0;
+      playbackSource=autoplay?'autoplay':source;
+      reportedPlaybackStart=false;
+      usage('playback_requested',current.id,{source:playbackSource,mode:playbackMode});
+    }
     if(!setSource(retrying)){wantsPlay=false;updateState('error');return Promise.resolve();}
     updateState(retrying?'reconnecting':'connecting');
     setWatchdog();
@@ -141,9 +158,9 @@
     if(live){audio.removeAttribute('src');audio.load();}
     updateState('paused');
   }
-  function togglePlayback() {
+  function togglePlayback(source) {
     if(wantsPlay || (!audio.paused&&status==='playing')) pausePlayback();
-    else startPlayback();
+    else startPlayback({source});
   }
   function scheduleRetry() {
     if(!wantsPlay || retryTimer) return;
@@ -156,19 +173,19 @@
     const delay=retries[retryCount++];
     retryTimer=setTimeout(()=>{retryTimer=null;if(wantsPlay)startPlayback({retrying:true});},delay);
   }
-  function chooseStation(id,{play=true}={}) {
+  function chooseStation(id,{play=true,source='station_card'}={}) {
     const next=stations.find(s=>s.id===id);
     if(!next) return;
-    if(current?.id===id&&play){togglePlayback();return;}
+    if(current?.id===id&&play){togglePlayback(source);return;}
     wantsPlay=false;++operation;clearWaiting();stopMetadata();audio.pause();
-    current=next;metadata=null;retryCount=0;storage.set(keys.station,id);usage('select_station',id);
+    current=next;metadata=null;retryCount=0;storage.set(keys.station,id);usage('select_station',id,{source,mode:playbackMode});
     audio.removeAttribute('src');audio.load();
     updateStation();updateState('ready');
-    if(play)startPlayback();
+    if(play)startPlayback({source});
   }
-  function stepStation(direction) {
+  function stepStation(direction,source='player') {
     if(stations.length<2) return;
-    const index=stations.indexOf(current);chooseStation(stations[(index+direction+stations.length)%stations.length].id);
+    const index=stations.indexOf(current);chooseStation(stations[(index+direction+stations.length)%stations.length].id,{source});
   }
   function updateStation() {
     if(!current) return;
@@ -236,7 +253,7 @@
       const art=document.createElement('img');setArtwork(art,safeUrl(station.artwork),'small');art.alt='';art.width=48;art.height=48;
       const copy=document.createElement('span');const title=document.createElement('strong');title.textContent=station.name;
       const subtitle=document.createElement('small');subtitle.textContent=live?'Live radio':station.title+' · '+station.bpm+' BPM · Preview';copy.append(title,subtitle);play.append(art,copy);
-      play.addEventListener('click',()=>{closeDialogs();chooseStation(station.id);});
+      play.addEventListener('click',()=>{closeDialogs();chooseStation(station.id,{source:container.id==='search-results'?'search':'saved'});});
       const heart=document.createElement('button');heart.type='button';heart.className='icon-button';heart.dataset.save=station.id;
       heart.innerHTML='<svg class="icon" aria-hidden="true"><use href="#i-heart"/></svg>';
       heart.addEventListener('click',()=>toggleSaved(station.id));row.append(play,heart);container.append(row);
@@ -247,7 +264,8 @@
   function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());try { window.EDM_ANALYTICS?.view('Home'); } catch {}}
   function openDialog(id){closeDialogs();if(id==='search-dialog')usage('open_search');if(id==='saved-dialog')usage('open_library');if(id==='saved-dialog')renderSaved();if(id==='search-dialog')renderSearch();const dialog=$(id);dialog?.showModal();try { window.EDM_ANALYTICS?.view({'search-dialog':'Search','saved-dialog':'Library','privacy-dialog':'Privacy','terms-dialog':'Terms','install-dialog':'Install','about-dialog':'About'}[id] || 'Home'); } catch {} if(id==='search-dialog')$('search-input').focus();}
 
-  playButtons.forEach(button=>button.addEventListener('click',togglePlayback));
+  const playButtonSources = ['hero','artwork','player','app_demo'];
+  playButtons.forEach((button,index)=>button.addEventListener('click',()=>togglePlayback(playButtonSources[index])));
   document.querySelectorAll('[data-play]').forEach(button=>button.addEventListener('click',()=>chooseStation(button.dataset.play)));
   document.querySelectorAll('.save-button').forEach(button=>button.addEventListener('click',()=>toggleSaved(button.dataset.save)));
   $('player-save').addEventListener('click',()=>current&&toggleSaved(current.id));
@@ -259,12 +277,14 @@
   $('search-input').addEventListener('input',renderSearch);
   document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{
     const selected=button.dataset.filter;
+    usage('filter_stations',selected,{section:'discover',source:'station_card'});
     document.querySelectorAll('[data-filter]').forEach(filter=>{const active=filter===button;filter.classList.toggle('active',active);filter.setAttribute('aria-pressed',String(active));});
     document.querySelectorAll('[data-channel]').forEach(card=>{card.hidden=!stations.some(s=>s.id===card.dataset.channel)||(selected!=='all'&&card.dataset.channel!==selected);});
   }));
   $('volume').addEventListener('input',event=>{audio.volume=Number(event.target.value);audio.muted=false;storage.set(keys.volume,audio.volume);updateVolume();});
   $('mute-button').addEventListener('click',()=>{audio.muted=!audio.muted;updateVolume();});
-  function updateVolume(){const muted=audio.muted||audio.volume===0;icon($('mute-button'),muted?'mute':'volume');$('mute-button').setAttribute('aria-label',muted?'Unmute audio':'Mute audio');}
+  audio.addEventListener('volumechange',reportPlaybackState);
+  function updateVolume(){const muted=audio.muted||audio.volume===0;icon($('mute-button'),muted?'mute':'volume');$('mute-button').setAttribute('aria-label',muted?'Unmute audio':'Mute audio');reportPlaybackState();}
   $('clear-data').addEventListener('click',()=>{
     Object.values(keys).forEach(key=>storage.remove(key));saved=new Set();audio.volume=.7;audio.muted=false;$('volume').value=.7;updateVolume();updateSavedUI();renderSaved();announce('Your saved preferences have been cleared.');
   });
@@ -276,16 +296,18 @@
   $('install-button').addEventListener('click',async()=>{
     const apk=androidDownload();
     if(apk){
+      usage('download_app',null,{section:'app',source:'app_section'});
       const link=document.createElement('a');
       link.href=apk.href;link.download=apk.filename;link.referrerPolicy='no-referrer';link.hidden=true;
-      document.body.append(link);link.click();link.remove();usage('download_app');
+      document.body.append(link);link.click();link.remove();
       announce('Download requested. Check your browser’s downloads for the Uplink APK.');return;
     }
     if(config.androidAppUrl){announce('The app download is unavailable. Please try again later.');return;}
+    usage('web_app_install_opened',null,{section:'app',source:'app_section'});
     if(installPrompt){const prompt=installPrompt;installPrompt=null;try{await prompt.prompt();const result=await prompt.userChoice;if(result.outcome==='accepted')announce('Your frequency is coming to your home screen.');}catch{openDialog('install-dialog');}}
     else openDialog('install-dialog');
   });
-  window.addEventListener('appinstalled',()=>{installPrompt=null;announce('Your frequency is on your home screen.');});
+  window.addEventListener('appinstalled',()=>{installPrompt=null;usage('web_app_installed');announce('Your frequency is on your home screen.');});
 
   audio.addEventListener('playing',()=>{
     if(!wantsPlay){audio.pause();return;}
@@ -309,9 +331,9 @@
   window.addEventListener('online',()=>{if(wantsPlay&&status!=='playing'){retryCount=0;startPlayback({retrying:true});}});
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&wantsPlay){if(status==='error'||status==='offline')startPlayback({retrying:true});else refreshMetadata();}});
   // No global gesture listener: browsing or closing a dialog must never start music unexpectedly.
-  document.addEventListener('keydown',event=>{if(event.code==='Space'&&event.target===document.body&&!document.querySelector('dialog[open]')){event.preventDefault();togglePlayback();}});
+  document.addEventListener('keydown',event=>{if(event.code==='Space'&&event.target===document.body&&!document.querySelector('dialog[open]')){event.preventDefault();togglePlayback('keyboard');}});
   if('mediaSession' in navigator) {
-    const handlers={play:()=>startPlayback(),pause:pausePlayback,stop:pausePlayback,nexttrack:()=>stepStation(1),previoustrack:()=>stepStation(-1)};
+    const handlers={play:()=>startPlayback({source:'media_controls'}),pause:pausePlayback,stop:pausePlayback,nexttrack:()=>stepStation(1,'media_controls'),previoustrack:()=>stepStation(-1,'media_controls')};
     Object.entries(handlers).forEach(([action,handler])=>{try{navigator.mediaSession.setActionHandler(action,handler);}catch{}});
   }
   if('serviceWorker' in navigator&&window.isSecureContext) {
