@@ -1,7 +1,7 @@
 // Public listener configuration only. Never put Uplink admin credentials or origin IPs here.
 window.EDM_CONFIG = {
   liveMode: false,
-  autoStart: true,
+  autoStart: false,
   androidAppUrl: 'https://electronicdancemusic.audio/downloads/Uplink-Listener-0.3.16-rc8.apk',
   stations: [
     {id:'house',name:'House',title:'Afterglow',artist:'The EDM Audio Sessions',bpm:124,description:'Warm bass. Soulful edges. Endless movement.',keywords:'groove soulful warm drive sunset',artwork:'./assets/house.webp',previewUrl:'./assets/audio/house.mp3',streamUrl:'',nowPlayingUrl:''},

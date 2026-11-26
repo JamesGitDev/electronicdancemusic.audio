@@ -27,7 +27,8 @@
     ['app', '#app'], ['about', '#about'], ['footer', '.site-footer'], ['player', '#player'],
   ]);
   const sections = new Set([...regions.keys(), ...dialogs.values()]);
-  const sources = new Set(['hero', 'artwork', 'player', 'app_demo', 'station_card', 'search', 'saved', 'keyboard', 'media_controls', 'autoplay', 'app_section', 'header', 'mobile_menu', 'footer', 'about']);
+  const sources = new Set(['hero', 'artwork', 'player', 'app_demo', 'station_card', 'search', 'saved', 'keyboard', 'media_controls', 'autoplay', 'app_section', 'header', 'mobile_menu', 'footer', 'about', 'discover']);
+  const appActions = new Set(['download_app', 'web_app_install_opened', 'web_app_install_result']);
   // Each row defines a stable reporting label. Only these controls can emit events.
   // Station attribution is restricted to the public station slug allowlist.
   const controls = [
@@ -42,9 +43,11 @@
     ['#hero-play', 'radio', 'hero_play', true],
     ['#art-play', 'radio', 'hero_art_play', true],
     ['#radio a[href="#discover"]', 'radio', 'explore_sounds', true],
+    ['#hero-app-link', 'radio', 'hero_app_link', true],
     ['#discover [data-filter]', 'discover', 'genre_filter'],
     ['#discover [data-play]', 'discover', 'station_play', true],
     ['#discover [data-save]', 'discover', 'station_save'],
+    ['#discover-app-link', 'discover', 'discover_app_link', true],
     ['#install-button', 'app', 'android_download', true],
     ['#install-web-button', 'app', 'web_install', true],
     ['#app a[href="./release-notes.txt"]', 'app', 'release_notes'],
@@ -86,7 +89,7 @@
   let enabled = false, loaded = false, pageSent = false, away = false;
   let foreground = document.visibilityState === 'visible';
   let screen = 'Home', playback = 'paused', station = null, mode = 'preview', audible = false;
-  let launchSource = null, launchSection = null;
+  let launchSource = null, launchSection = null, appEntry = 'app_section';
   let since = performance.now(), exposureAt = since, observer;
   const controlObservers = [];
   const visibleSections = new Set();
@@ -101,7 +104,8 @@
     const params = {...context};
     if (stationIds.has(selected)) params.station = selected;
     if (sections.has(details.section)) params.site_section = details.section;
-    if (sources.has(details.source)) params.interaction_source = details.source;
+    const source = appActions.has(name) ? appEntry : details.source;
+    if (sources.has(source)) params.interaction_source = source;
     if (controlNames.has(details.control)) params.site_control = details.control;
     if (outcomes.has(details.outcome)) params.outcome = details.outcome;
     if (details.mode === 'preview' || details.mode === 'live') params.playback_mode = details.mode;
@@ -270,7 +274,9 @@
     const section = link?.getAttribute('href').slice(1);
     if (!anchors.has(section)) return;
     const source = link.closest('.mobile-nav-dialog') ? 'mobile_menu' : link.closest('.site-header') ? 'header'
-      : link.closest('.site-footer') ? 'footer' : link.closest('#about') ? 'about' : 'hero';
+      : link.closest('.site-footer') ? 'footer' : link.closest('#about') ? 'about'
+      : link.closest('#discover') ? 'discover' : 'hero';
+    if (section === 'app') appEntry = source;
     event('navigate_section', null, {section, source});
   }, true);
 
@@ -341,6 +347,7 @@
     enabled = persist ? remember(permitted) && permitted : permitted;
     if (enabled) start();
     else {
+      appEntry = 'app_section';
       stopWatching();
       window['ga-disable-' + id] = true;
       if (loaded) tag('consent', 'update', {analytics_storage: 'denied', ...noAds});
