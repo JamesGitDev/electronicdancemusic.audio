@@ -19,3 +19,5 @@ Open `http://localhost:8080`. Live analytics requires the production HTTPS hostn
 Sync a clean local branch with `git pull --ff-only`. Make related edits together, run `npm run check`, and review the diff before staging. Use a specific commit subject, such as `Defer station covers until they near the viewport`. In the commit body, explain the reason and record the checks you actually ran. Push the branch to GitHub with `git push`, or `git push -u origin <branch>` for a new branch.
 
 Production runs from an immutable release on the Ubuntu host. The host’s deployment notes describe staging a committed build and activating it after verification. A GitHub push records the change. Production activation is a separate step.
+
+The [website history](HISTORY.md) describes the recovered release snapshots and how to inspect them.
