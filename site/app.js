@@ -138,7 +138,15 @@
       const selected=card.dataset.channel===current?.id;
       card.classList.toggle('is-selected',selected&&playing);
       const control=card.querySelector('[data-play]');
-      if(control){icon(control,selected&&playing?'pause':'play');const s=stations.find(s=>s.id===card.dataset.channel);if(s)control.setAttribute('aria-label',(selected&&playing?'Pause ':'Play ')+s.name+(live?'':': '+s.title));}
+      if (!control) continue;
+      const isPlaying = selected && playing;
+      icon(control, isPlaying ? 'pause' : 'play');
+      const station = stations.find(station => station.id === card.dataset.channel);
+      if (!station) continue;
+      const label = control.querySelector('.cover-tag').textContent.trim();
+      const action = isPlaying ? 'Pause' : 'Play';
+      const name = live ? station.name : station.name + ': ' + station.title;
+      control.setAttribute('aria-label', `${label}, ${action} ${name}`);
     }
     if('mediaSession' in navigator) {try{navigator.mediaSession.playbackState=playing?'playing':wantsPlay?'none':'paused';}catch{}}
   }
@@ -286,10 +294,13 @@
     if(!items.length){const empty=document.createElement('p');empty.className='empty-state';empty.textContent=emptyMessage;container.append(empty);return;}
     items.forEach(station=>{
       const row=document.createElement('div');row.className='result-row';
-      const play=document.createElement('button');play.type='button';play.dataset.resultStation=station.id;play.setAttribute('aria-label','Play '+station.name);
+      const play=document.createElement('button');play.type='button';play.dataset.resultStation=station.id;
+      const action = document.createElement('span');
+      action.className = 'sr-only';
+      action.textContent = 'Play';
       const art=document.createElement('img');setArtwork(art,safeUrl(station.artwork),'small');art.alt='';art.width=48;art.height=48;
       const copy=document.createElement('span');const title=document.createElement('strong');title.textContent=station.name;
-      const subtitle=document.createElement('small');subtitle.textContent=live?'Live radio':station.title+' · '+station.bpm+' BPM · Preview';copy.append(title,subtitle);play.append(art,copy);
+      const subtitle=document.createElement('small');subtitle.textContent=live?'Live radio':station.title+' · '+station.bpm+' BPM · Preview';copy.append(title,subtitle);play.append(art,action,copy);
       play.addEventListener('click',()=>{if(container.id==='search-results')reportSearch();closeDialogs();chooseStation(station.id,{source:container.id==='search-results'?'search':'saved'});});
       const heart=document.createElement('button');heart.type='button';heart.className='icon-button';heart.dataset.save=station.id;
       heart.innerHTML='<svg class="icon" aria-hidden="true"><use href="#i-heart"/></svg>';

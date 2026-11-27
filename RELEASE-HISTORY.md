@@ -16,6 +16,9 @@ The dates below come from the preserved archives in UTC. The linked commits were
 - Restore focus after analytics consent and when a saved station disappears. Announce the search result count and expose the site footer as a landmark.
 - Verified Chromium keyboard navigation and the accessibility tree at 1440, 390, and 320 CSS pixels. Rechecked playback, downloads, analytics consent, and privacy behavior in the local release preview.
 
+- Matched station artwork buttons to their visible tags in both playback states. Search and Saved buttons now include their visible track details in the accessible name. The labeled Android preview is a named group.
+- Rechecked the 38 listed PageSpeed items across 40 desktop and mobile states, including open dialogs, playing and paused controls, email verification, and the EDM.Audio settings transfer screen. The nine applicable rules passed.
+
 ## Recovered snapshots
 
 The file column shows changes to the archived frontend. Use the linked diff for additions, removals, and the Android package metadata for each version.
