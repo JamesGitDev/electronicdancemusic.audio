@@ -166,3 +166,43 @@
     margin-top: 0;
   }
 }
+
+/* Keep keyboard focus clear of the player and the optional analytics notice. */
+html {
+  --player-clearance: calc(108px + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: var(--focus-clearance, var(--player-clearance));
+}
+
+/* Reveal each keyboard stop immediately, including during rapid Tab presses. */
+html:has(:focus-visible) {
+  scroll-behavior: auto;
+}
+
+body {
+  padding-bottom: max(var(--focus-clearance, 0px), var(--player-clearance));
+}
+
+@media (max-width: 760px) {
+  html {
+    --player-clearance: calc(94px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+#saved-results .empty-state:focus-visible {
+  outline: 2px solid var(--lime);
+}
+
+.cover-play:focus-visible,
+.save-button:focus-visible,
+.filter:focus-visible {
+  outline-offset: -4px;
+}
+
+.cover-play:focus-visible::after {
+  border: 3px solid var(--lime);
+  box-shadow: inset 0 0 0 2px #141610;
+}
+
+.filter.active:focus-visible {
+  outline-color: #141610;
+}

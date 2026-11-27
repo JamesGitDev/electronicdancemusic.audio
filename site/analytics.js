@@ -331,13 +331,21 @@
     watchSections();
   }
   function render() {
-    document.getElementById('analytics-consent')?.toggleAttribute('hidden', optOut || choice() !== null);
+    const banner = document.getElementById('analytics-consent');
+    const focused = document.activeElement;
+    const hideBanner = optOut || choice() !== null;
+    const restoreFromBanner = hideBanner && banner?.contains(focused);
+    const preventScroll = !focused?.matches(':focus-visible');
+    banner?.toggleAttribute('hidden', hideBanner);
+    if (restoreFromBanner) document.getElementById('art-play')?.focus({preventScroll});
     const status = document.getElementById('analytics-status');
     if (status) status.textContent = optOut ? 'Off — respecting your browser privacy preference.' : enabled ? 'On for this browser.' : 'Off for this browser.';
     const allow = document.getElementById('analytics-enable');
-    if (allow) allow.disabled = optOut || enabled;
     const deny = document.getElementById('analytics-disable');
+    if (allow) allow.disabled = optOut || enabled;
     if (deny) deny.disabled = !enabled && choice() === false;
+    if (focused === allow && allow?.disabled && deny && !deny.disabled) deny.focus();
+    if (focused === deny && deny?.disabled && allow && !allow.disabled) allow.focus();
   }
   function consent(value, persist = true) {
     resetTiming();

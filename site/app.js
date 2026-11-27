@@ -25,6 +25,21 @@
   let metadata = null, renderProgressAt = 0;
   const playButtons = [$('hero-play'),$('art-play'),$('player-play'),$('phone-play')];
   const retries = [1500,3000,6000,12000];
+
+  const focusOverlays = [$('player'), $('analytics-consent')];
+  function updateFocusClearance() {
+    const bottom = focusOverlays.reduce((clearance, overlay) => {
+      if (overlay.hidden || getComputedStyle(overlay).position !== 'fixed') return clearance;
+      return Math.max(clearance, window.innerHeight - overlay.getBoundingClientRect().top);
+    }, 0);
+    document.documentElement.style.setProperty('--focus-clearance', Math.ceil(bottom + 12) + 'px');
+  }
+  updateFocusClearance();
+  window.addEventListener('resize', updateFocusClearance);
+  if (typeof ResizeObserver === 'function') {
+    const overlays = new ResizeObserver(updateFocusClearance);
+    focusOverlays.forEach(overlay => overlays.observe(overlay));
+  }
   let volume = Number(storage.get(keys.volume,.7));
   if (!Number.isFinite(volume)) volume=.7;
   audio.volume=Math.min(1,Math.max(0,volume));
@@ -281,12 +296,30 @@
       heart.addEventListener('click',()=>toggleSaved(station.id));row.append(play,heart);container.append(row);
     });updateSavedUI();
   }
-  function renderSaved(){renderResults($('saved-results'),stations.filter(s=>saved.has(s.id)),'Your next favorite is out there. Tap the heart on any frequency to keep it here.');}
+  function renderSaved() {
+    const results = $('saved-results');
+    const focusedRow = document.activeElement?.closest('.result-row');
+    const focusedIndex = Array.from(results.children).indexOf(focusedRow);
+    renderResults(results, stations.filter(station => saved.has(station.id)),
+      'Your next favorite is out there. Tap the heart on any frequency to keep it here.');
+    if (focusedIndex === -1) return;
+    const nextRow = results.children[Math.min(focusedIndex, results.children.length - 1)];
+    const nextControl = nextRow.querySelector('[data-result-station]');
+    if (nextControl) {
+      nextControl.focus();
+    } else {
+      nextRow.tabIndex = -1;
+      nextRow.focus();
+    }
+  }
   let searchTimer, pendingSearchOutcome;
   function renderSearch(){
     const term=$('search-input').value.trim().toLowerCase();
     const results=stations.filter(s=>[s.name,s.title,s.description,s.keywords].join(' ').toLowerCase().includes(term));
     renderResults($('search-results'),results,'No frequencies match yet. Try house, techno, trance, or liquid.');
+    const status = $('search-status');
+    const message = results.length === 1 ? '1 frequency found.' : `${results.length} frequencies found.`;
+    if (message !== status.textContent) status.textContent = message;
     return term ? results.length : null;
   }
   function reportSearch(){

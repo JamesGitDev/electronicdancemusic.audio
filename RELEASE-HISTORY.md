@@ -10,6 +10,12 @@ The dates below come from the preserved archives in UTC. The linked commits were
 - **Mobile loading.** Prioritize smaller phone artwork and defer below-the-fold images. The before and after mobile medians were 157 to 68 KiB, 1.51 to 1.48 seconds, Lighthouse 99 to 100. These came from three cold Lighthouse runs per version.
 - **GitHub baseline.** [`d70a07c`](https://github.com/JamesGitDev/electronicdancemusic.audio/commit/d70a07c93eb16b6d36a89dc7763f25f396f908cb) imports the editable build and records release revision `b94564dde3dd`. The build reproduced the homepage, JavaScript bundle, and service worker from the live release.
 
+## Keyboard and screen-reader accessibility
+
+- Keep focus visible on station artwork, Save buttons, and genre filters. Reserve scroll space for the pinned player and the analytics notice, and reveal focused controls immediately during keyboard navigation.
+- Restore focus after analytics consent and when a saved station disappears. Announce the search result count and expose the site footer as a landmark.
+- Verified Chromium keyboard navigation and the accessibility tree at 1440, 390, and 320 CSS pixels. Rechecked playback, downloads, analytics consent, and privacy behavior in the local release preview.
+
 ## Recovered snapshots
 
 The file column shows changes to the archived frontend. Use the linked diff for additions, removals, and the Android package metadata for each version.
