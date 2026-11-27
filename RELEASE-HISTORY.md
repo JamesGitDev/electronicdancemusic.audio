@@ -24,6 +24,11 @@ The dates below come from the preserved archives in UTC. The linked commits were
 - Add Schema.org `WebSite` JSON-LD and matching `og:site_name` metadata to the canonical homepage.
 - Verified the name and URL in the Schema Markup Validator with zero errors and zero warnings. The URL matches the canonical link and sitemap.
 
+## Player progress animation
+
+- Animate preview progress with a horizontal transform so the progress bar advances without changing layout width.
+- Verified in mobile Chromium that the compositor handles the transition. Playback, pause, station changes, and the reduced-motion setting behaved as expected.
+
 ## Recovered snapshots
 
 The file column shows changes to the archived frontend. Use the linked diff for additions, removals, and the Android package metadata for each version.

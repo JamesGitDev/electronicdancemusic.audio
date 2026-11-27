@@ -11,6 +11,7 @@
   const allStations = Array.isArray(config.stations) ? config.stations : [];
   const stations = allStations.filter(s => s && /^[a-z0-9-]+$/.test(s.id) && (!live || safeUrl(s.streamUrl)));
   const audio = $('radio-audio');
+  const progressFill = $('player-progress-fill');
   const keys = {saved:'edm.saved.v1',station:'edm.station.v1',volume:'edm.volume.v1'};
   const storage = {
     get(key,fallback) {try {const v=localStorage.getItem(key);return v === null ? fallback : JSON.parse(v);} catch {return fallback;}},
@@ -245,7 +246,7 @@
     setArtwork($('phone-art'),artwork,'phone');$('phone-track').textContent=title;
     $('phone-genre').textContent=current.name.toUpperCase()+(live?' / LIVE RADIO':' / THE PREVIEW SESSIONS');
     $('phone-track').nextElementSibling.textContent=artist;
-    $('player-progress-fill').style.width='0%';
+    progressFill.style.transform = 'scaleX(0)';
     updateSavedUI();
     if('mediaSession' in navigator && typeof MediaMetadata!=='undefined') {
       try{navigator.mediaSession.metadata=new MediaMetadata({title,artist,album:live?'EDM Audio Radio':'Original Preview Sessions',artwork:artwork?[{src:artworkVariant(artwork)?.thumb||artwork}]:[]});}catch{}
@@ -435,7 +436,10 @@
   audio.addEventListener('ended',()=>{if(live&&wantsPlay)scheduleRetry();});
   audio.addEventListener('timeupdate',()=>{
     const now=performance.now();if(now-renderProgressAt<200)return;renderProgressAt=now;
-    if(!live&&Number.isFinite(audio.duration)&&audio.duration>0)$('player-progress-fill').style.width=Math.min(100,audio.currentTime/audio.duration*100)+'%';
+    if (!live && Number.isFinite(audio.duration) && audio.duration > 0) {
+      const progress = Math.min(1, audio.currentTime / audio.duration);
+      progressFill.style.transform = `scaleX(${progress})`;
+    }
   });
   window.addEventListener('offline',()=>{if(wantsPlay&&audio.readyState<3){clearWaiting();updateState('offline');}});
   window.addEventListener('online',()=>{if(wantsPlay&&status!=='playing'){retryCount=0;startPlayback({retrying:true});}});
