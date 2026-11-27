@@ -19,6 +19,11 @@ The dates below come from the preserved archives in UTC. The linked commits were
 - Matched station artwork buttons to their visible tags in both playback states. Search and Saved buttons now include their visible track details in the accessible name. The labeled Android preview is a named group.
 - Rechecked the 38 listed PageSpeed items across 40 desktop and mobile states, including open dialogs, playing and paused controls, email verification, and the EDM.Audio settings transfer screen. The nine applicable rules passed.
 
+## Search site-name markup
+
+- Add Schema.org `WebSite` JSON-LD and matching `og:site_name` metadata to the canonical homepage.
+- Verified the name and URL in the Schema Markup Validator with zero errors and zero warnings. The URL matches the canonical link and sitemap.
+
 ## Recovered snapshots
 
 The file column shows changes to the archived frontend. Use the linked diff for additions, removals, and the Android package metadata for each version.
